@@ -1,0 +1,49 @@
+# Service Config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins-service
+  namespace: jenkins
+  # annotations:
+  #     prometheus.io/scrape: 'true'
+  #     prometheus.io/path:   /
+  #     prometheus.io/port:   '8080'
+spec:
+  selector: 
+    app: jenkins
+  ports:
+    - name: httpport
+      port: 8080
+      targetPort: 8080
+    - name: jnlpport
+      port: 50000
+      targetPort: 50000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: jenkins-ingress
+  namespace: jenkins
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-production
+spec:
+  rules:
+  # TODO: get this from vault
+  - host: build.tiannaru.xyz
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: jenkins-service
+            port:
+              number: 8080
+  tls:
+  - hosts:
+    # TODO: get this from vault
+    - build.tiannaru.xyz
+    secretName: jenkins-tls
+

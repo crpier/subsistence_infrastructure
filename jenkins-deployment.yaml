@@ -1,0 +1,74 @@
+# Deployment Config
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jenkins-deployment
+  namespace: jenkins
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jenkins
+  template:
+    metadata:
+      annotations:
+        vault.hashicorp.com/agent-inject: 'true'
+        vault.hashicorp.com/role: 'jenkins'
+        vault.hashicorp.com/agent-inject-secret-config.sh: 'secret/data/jenkins/config'
+        vault.hashicorp.com/log-level: "debug"
+        vault.hashicorp.com/agent-inject-status: 'update'
+        # TODO: use kv v2 engine in vault
+        vault.hashicorp.com/agent-inject-template-config.sh: |
+          {{- with secret "secret/data/jenkins/config" -}}
+            export JENKINS_ADMIN_PASSWORD="{{ .Data.JENKINS_ADMIN_PASSWORD }}"
+            export GITHUB_TOKEN="{{ .Data.GITHUB_TOKEN }}"
+            export JENKINS_URL="{{ .Data.JENKINS_URL }}"
+            export DOCKER_TOKEN="{{ .Data.DOCKER_TOKEN }}"
+            export JENKINS_ADMIN_ID="{{ .Data.JENKINS_ADMIN_ID }}"
+            export DOCKER_USER="{{ .Data.DOCKER_USER }}"
+          {{- end -}}
+      labels:
+        app: jenkins
+    spec:
+      serviceAccountName: jenkins-admin
+      securityContext:
+            fsGroup: 1000 
+            runAsUser: 1000
+      containers:
+        - name: jenkins
+          image: tiannaru/jcasc:latest
+          imagePullPolicy: "Always"
+          # This is the worst way to inject env vars, except for all
+          # other I have tried
+          args:
+            ['sh', '-c', '. /vault/secrets/config.sh && /sbin/tini -- /usr/local/bin/jenkins.sh']
+          ports:
+            - name: httpport
+              containerPort: 8080
+            - name: jnlpport
+              containerPort: 50000
+          livenessProbe:
+            httpGet:
+              path: "/login"
+              port: 8080
+            initialDelaySeconds: 90
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: "/login"
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # volumeMounts:
+          #   - name: jenkins-data
+          #     mountPath: /var/jenkins_home         
+      # volumes:
+      #   - name: jenkins-data
+      #     persistentVolumeClaim:
+      #         claimName: jenkins-pv-claim
+
